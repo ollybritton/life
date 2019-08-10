@@ -70,7 +70,7 @@ func (g *Grid) String(active, inactive string, ratio int) string {
 }
 
 // Extend will expand the size of a grid so that it meet the size specified.
-// If the size is smaller than the existing one.
+// If the size is smaller than the existing one, it will have no effect.
 func (g *Grid) Extend(width, height int) {
 	addWidth := width - g.Width
 	addHeight := height - g.Height

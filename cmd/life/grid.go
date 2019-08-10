@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -58,10 +59,14 @@ func GetTemplate(name string) string {
 
 // GridWrapper is a wrapper for grid which allows it to print and be controlled.
 type GridWrapper struct {
-	grid  life.Grid
-	state string
-	mu    sync.Mutex
-	gui   *gocui.Gui
+	grid         life.Grid
+	state        string
+	mu           sync.Mutex
+	gui          *gocui.Gui
+	loopInterval time.Duration
+
+	active   string
+	inactive string
 
 	command     string
 	editorstate string
@@ -85,7 +90,7 @@ func (grid *GridWrapper) Loop(g *gocui.Gui) {
 	for {
 		switch grid.GetState() {
 		case "animation":
-			time.Sleep(time.Millisecond * 200)
+			time.Sleep(grid.loopInterval)
 			g.Update(func(g *gocui.Gui) error {
 				v, err := g.View("cells")
 				if err != nil {
@@ -95,7 +100,7 @@ func (grid *GridWrapper) Loop(g *gocui.Gui) {
 				v.Clear()
 
 				grid.grid.Step(grid.grid.GetDefault)
-				fmt.Fprintln(v, grid.grid.String("O", ".", 2))
+				fmt.Fprintln(v, grid.grid.String(grid.active, grid.inactive, 2))
 
 				return nil
 			})
@@ -110,7 +115,7 @@ func (grid *GridWrapper) Loop(g *gocui.Gui) {
 				v.Clear()
 
 				grid.grid.Step(grid.grid.GetDefault)
-				fmt.Fprintln(v, grid.grid.String("O", ".", 2))
+				fmt.Fprintln(v, grid.grid.String(grid.active, grid.inactive, 2))
 
 				return nil
 			})
@@ -118,7 +123,7 @@ func (grid *GridWrapper) Loop(g *gocui.Gui) {
 			grid.SetState("pause")
 
 		default:
-			time.Sleep(time.Millisecond * 200)
+			time.Sleep(grid.loopInterval)
 
 		}
 	}
@@ -131,6 +136,22 @@ func (grid *GridWrapper) Update(v *gocui.View) {
 		v.FgColor = gocui.ColorGreen
 		fmt.Fprintf(v, " %v", grid.message)
 	}
+}
+
+// UpdateCells updates the cells.
+func (grid *GridWrapper) UpdateCells() {
+	grid.gui.Update(func(g *gocui.Gui) error {
+		v, err := g.View("cells")
+		if err != nil {
+			return err
+		}
+
+		v.Clear()
+
+		fmt.Fprintln(v, grid.grid.String("O", ".", 2))
+
+		return nil
+	})
 }
 
 // Edit handles the state of the editor
@@ -208,6 +229,8 @@ func (grid *GridWrapper) handleCommand(v *gocui.View) string {
 	if parts[0] == "clear" || parts[0] == "reset" {
 		grid.grid = life.NewGrid(100, 100)
 		grid.Update(v)
+
+		return "Cleared grid."
 	}
 
 	if parts[0] == "set" {
@@ -242,5 +265,67 @@ func (grid *GridWrapper) handleCommand(v *gocui.View) string {
 		return strings.Join(GetTemplateList(), ", ")
 	}
 
-	return ""
+	if parts[0] == "on" {
+		if len(parts) != 3 {
+			return "Please specify a position to turn on. For example, 'on 1 1'"
+		}
+
+		x, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return fmt.Sprintf("error converting coordinate: %v", err)
+		}
+
+		y, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return fmt.Sprintf("error converting coordinate: %v", err)
+		}
+
+		grid.grid.Cells[y][x] = 1
+		grid.UpdateCells()
+
+		return fmt.Sprintf("Set position (%d, %d) to active.", x, y)
+	}
+
+	if parts[0] == "off" {
+		if len(parts) != 3 {
+			return "Please specify a position to turn off. For example, 'off 1 1'"
+		}
+
+		x, err := strconv.Atoi(parts[1])
+		if err != nil {
+			return fmt.Sprintf("error converting coordinate: %v", err)
+		}
+
+		y, err := strconv.Atoi(parts[2])
+		if err != nil {
+			return fmt.Sprintf("error converting coordinate: %v", err)
+		}
+
+		grid.grid.Cells[y][x] = 0
+		grid.UpdateCells()
+
+		return fmt.Sprintf("Set position (%d, %d) to inactive.", x, y)
+	}
+
+	if parts[0] == "active" {
+		if len(parts) != 2 {
+			return "Usage: active [string]"
+		}
+
+		grid.active = parts[1]
+
+		return "Set active string to " + parts[1]
+	}
+
+	if parts[0] == "inactive" {
+		if len(parts) != 2 {
+			return "Usage: inactive [string]"
+		}
+
+		grid.inactive = parts[1]
+
+		return "Set inactive string to " + parts[1]
+	}
+
+	return "Command not recognised."
 }
